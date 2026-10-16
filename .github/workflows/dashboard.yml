@@ -1,0 +1,69 @@
+name: Build Xteink dashboard
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes; the script tells the device when to wake
+  workflow_dispatch:          # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write   # for the monthly keep-alive commit
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y fonts-dejavu-core >/dev/null
+          pip install pillow requests
+
+      - name: Build dashboard
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SITE_SECRET: ${{ secrets.SITE_SECRET }}
+          TASKLIST_NAME: ${{ vars.TASKLIST_NAME }}
+          SHOW_UNDATED: ${{ vars.SHOW_UNDATED }}
+          LAT: ${{ vars.LAT || '42.3736' }}
+          LON: ${{ vars.LON || '-71.1097' }}
+          WIDTH: ${{ vars.WIDTH || '792' }}
+          HEIGHT: ${{ vars.HEIGHT || '528' }}
+          SLOTS: ${{ vars.SLOTS || '04:00,12:00' }}
+          INTERVAL_HOURS: ${{ vars.INTERVAL_HOURS }}
+        run: python dashboard/build.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      # GitHub pauses scheduled workflows in repos with no activity for 60 days.
+      # An empty commit on the 1st of each month keeps this one running.
+      - name: Keep-alive commit
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%d%H%M | cut -c1-4)" = "0100" ] && [ "$(date -u +%M)" -lt 15 ]; then
+            git config user.name "dashboard-bot"
+            git config user.email "dashboard-bot@users.noreply.github.com"
+            git commit --allow-empty -m "keep-alive" && git push
+          fi
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4
