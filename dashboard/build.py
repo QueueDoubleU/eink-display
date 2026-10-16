@@ -5,7 +5,7 @@ Builds a TRMNL-compatible static dashboard for an Xteink X3 (or X4).
 Output (in ./site/<SITE_SECRET>/):
   api/setup        JSON the device calls once when it's first set up
   api/display      JSON the device calls on every wake (image URL + how long to sleep)
-  screen-<ts>.bmp  1-bit image: today's Google Tasks + the weather
+  screen-<ts>.png  1-bit image: today's Google Tasks + the weather
 
 Runs every 15 minutes on GitHub Actions. Each run recomputes `refresh_rate`
 so the device's next wake lands near the next slot (default 04:00 and 12:00).
@@ -287,7 +287,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "api").mkdir(exist_ok=True)
     stamp = str(int(time.time()))
-    fname = f"screen-{stamp}.bmp"
+    fname = f"screen-{stamp}.png"  # TRMNL firmware decodes 1-bit PNGs of any panel size
     render(now, tasks, undated, wx).save(OUT / fname)
     render(now, tasks, undated, wx).convert("L").save(OUT / "preview.png")
 
@@ -300,7 +300,9 @@ def main() -> None:
     }
     setup = {
         "status": 200, "api_key": "static-dashboard", "friendly_id": "XTEINK",
-        "image_url": f"{base}/{fname}", "filename": f"screen-{stamp}", "message": "Device set up",
+        # Empty image_url: the firmware only accepts an exact 800x480 BMP as a setup image,
+        # so skip it and let the first /api/display call deliver the dashboard.
+        "image_url": "", "filename": "", "message": "Device set up",
     }
     (OUT / "api" / "display").write_text(json.dumps(display))
     (OUT / "api" / "setup").write_text(json.dumps(setup))
